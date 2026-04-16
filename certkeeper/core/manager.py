@@ -72,7 +72,8 @@ class Manager:
         self.deployer_registry = deployer_registry
         self.notifier_registry = notifier_registry
 
-    def check_certificates(self, days_before_expiry: int = 30) -> list[CertificateCheck]:
+    def check_certificates(self) -> list[CertificateCheck]:
+        days_before_expiry = self.config.scheduler.renewal_days
         checks: list[CertificateCheck] = []
         for certificate in self.config.certificates:
             status = self.store.get_certificate_status(certificate.domain)
@@ -99,7 +100,7 @@ class Manager:
         if not reminders:
             return
 
-        reminder_summary = ReminderSummary(reminders=reminders)
+        reminder_summary = ReminderSummary(reminders=reminders, renewal_days=self.config.scheduler.renewal_days)
         for resource in self.config.notifications.values():
             try:
                 notifier = self.notifier_registry.create(resource)
@@ -113,7 +114,7 @@ class Manager:
 
         for certificate in selected:
             status = self.store.get_certificate_status(certificate.domain)
-            check = self._build_check(certificate, status, 30)
+            check = self._build_check(certificate, status, self.config.scheduler.renewal_days)
             renewed = force or check.needs_renewal
             result = CertificateApplyResult(domain=certificate.domain, renewed=renewed)
 
@@ -199,7 +200,12 @@ class Manager:
         for target_name in certificate.deploy_to:
             target_config = self.config.deployers[target_name]
             deployer = self.deployer_registry.create(target_config)
-            deployer.deploy(certificate.domain, cert_path, key_path)
+            try:
+                deployer.deploy(certificate.domain, cert_path, key_path)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"部署目标 [{target_name}] ({target_config.provider}) 失败: {exc}"
+                ) from exc
             deployed_targets.append(target_name)
         return deployed_targets
 

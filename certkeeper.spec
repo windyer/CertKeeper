@@ -1,0 +1,151 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""PyInstaller 打包配置。用法：pyinstaller certkeeper.spec"""
+
+import sys
+from pathlib import Path
+
+block_cipher = None
+
+# 项目根目录
+ROOT = Path(SPECPATH)
+
+# Web 模板文件
+templates = ROOT / "certkeeper" / "web" / "templates"
+
+a = Analysis(
+    ["certkeeper/cli.py"],
+    pathex=[str(ROOT)],
+    binaries=[],
+    datas=[
+        (str(templates), "certkeeper/web/templates"),
+    ],
+    hiddenimports=[
+        # certkeeper 自身模块
+        "certkeeper",
+        "certkeeper.cli",
+        "certkeeper.config",
+        "certkeeper.runtime",
+        "certkeeper.exceptions",
+        "certkeeper.providers",
+        "certkeeper.acme_client",
+        "certkeeper.acme_client.client",
+        "certkeeper.acme_client.account",
+        "certkeeper.challenges",
+        "certkeeper.challenges.base",
+        "certkeeper.challenges.dns01",
+        "certkeeper.challenges.http01",
+        "certkeeper.core",
+        "certkeeper.core.manager",
+        "certkeeper.core.store",
+        "certkeeper.core.scheduler",
+        "certkeeper.core.daemon",
+        "certkeeper.dns",
+        "certkeeper.dns.base",
+        "certkeeper.dns.aliyun",
+        "certkeeper.deployers",
+        "certkeeper.deployers.base",
+        "certkeeper.deployers.nginx_ssh",
+        "certkeeper.deployers.nginx_local",
+        "certkeeper.deployers.aliyun_cdn",
+        "certkeeper.deployers.tencent_cdn",
+        "certkeeper.notifications",
+        "certkeeper.notifications.base",
+        "certkeeper.notifications.email",
+        "certkeeper.web",
+        "certkeeper.web.app",
+        "certkeeper.web.auth",
+        "certkeeper.web.routes",
+        "certkeeper.web.resource_fields",
+        # 第三方隐式依赖
+        "cryptography",
+        "cryptography.hazmat",
+        "cryptography.hazmat.primitives",
+        "cryptography.hazmat.backends",
+        "cryptography.hazmat.backends.openssl",
+        "cryptography.hazmat.primitives.asymmetric",
+        "cryptography.hazmat.primitives.serialization",
+        "cryptography.x509",
+        "paramiko",
+        "nacl",
+        "nacl.bindings",
+        "nacl.pwhash",
+        "apscheduler",
+        "apscheduler.triggers",
+        "apscheduler.triggers.cron",
+        "apscheduler.triggers.interval",
+        "apscheduler.triggers.date",
+        "uvicorn",
+        "uvicorn.logging",
+        "uvicorn.loops",
+        "uvicorn.loops.auto",
+        "uvicorn.protocols",
+        "uvicorn.protocols.http",
+        "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.websockets",
+        "uvicorn.protocols.websockets.auto",
+        "uvicorn.lifespan",
+        "uvicorn.lifespan.on",
+        "fastapi",
+        "starlette",
+        "starlette.middleware",
+        "starlette.middleware.sessions",
+        "starlette.routing",
+        "starlette.templating",
+        "jinja2",
+        "click",
+        "yaml",
+        "requests",
+        "httpx",
+        "itsdangerous",
+        "python_multipart",
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        "tkinter",
+        "matplotlib",
+        "numpy",
+        "pandas",
+        "scipy",
+        "PIL",
+        "IPython",
+        "notebook",
+        "pytest",
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="certkeeper",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="certkeeper",
+)

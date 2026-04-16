@@ -1,0 +1,32 @@
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# 安装系统依赖（cryptography 编译需要）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 先安装依赖（利用 Docker 层缓存）
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir ".[dev]"
+
+# 复制源码并构建
+COPY . .
+RUN python build.py
+
+# --- 运行镜像（可选） ---
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/dist/certkeeper /opt/certkeeper
+
+WORKDIR /data
+EXPOSE 8000
+
+ENTRYPOINT ["/opt/certkeeper/certkeeper"]
+CMD ["--config", "/data/certkeeper.yaml", "start"]

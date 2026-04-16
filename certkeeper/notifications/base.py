@@ -22,6 +22,7 @@ class ReminderSummary:
     """到期提醒汇总。"""
 
     reminders: list[ExpiryReminder] = field(default_factory=list)
+    renewal_days: int = 30
 
 
 class Notifier(Provider):

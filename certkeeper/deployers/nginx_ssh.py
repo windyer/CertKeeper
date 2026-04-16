@@ -31,7 +31,7 @@ class NginxSshDeployer(Deployer):
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         host = str(self.config.settings["host"])
-        port = int(self.config.settings.get("port", 22))
+        port = int(self.config.settings["port"]) if self.config.settings.get("port") else 22
         user = str(self.config.settings["user"])
 
         connect_kwargs: dict = {"hostname": host, "port": port, "username": user, "timeout": 30}

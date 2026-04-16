@@ -153,6 +153,7 @@ def register_routes(app: FastAPI) -> None:
         interval: str = Form("daily"),
         time: str = Form("03:00"),
         reminder_days: str = Form("30"),
+        renewal_days: str = Form("30"),
         csrf_token: str | None = Form(None),
     ):
         if not request.session.get("authenticated"):
@@ -173,6 +174,10 @@ def register_routes(app: FastAPI) -> None:
             config.scheduler.reminder_days = max(int(reminder_days), 1)
         except (ValueError, TypeError):
             config.scheduler.reminder_days = 30
+        try:
+            config.scheduler.renewal_days = max(int(renewal_days), 1)
+        except (ValueError, TypeError):
+            config.scheduler.renewal_days = 30
 
         if scheduler_obj is not None and scheduler_obj.running:
             # 移除旧任务并重新添加
@@ -194,7 +199,7 @@ def register_routes(app: FastAPI) -> None:
                     id="certkeeper-apply",
                     replace_existing=True,
                 )
-                request.session["flash"] = f"调度器配置已更新：{interval} {time}，提醒天数 {config.scheduler.reminder_days} 天"
+                request.session["flash"] = f"调度器配置已更新：{interval} {time}，提醒天数 {config.scheduler.reminder_days} 天，续期天数 {config.scheduler.renewal_days} 天"
             else:
                 request.session["flash"] = "调度器已禁用，定时任务已清除。"
         else:

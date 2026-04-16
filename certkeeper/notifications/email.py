@@ -66,15 +66,20 @@ class EmailNotifier(Notifier):
         return "\n".join(lines)
 
     def _build_reminder_body(self, reminder_summary: ReminderSummary) -> str:
-        lines = ["以下证书即将到期，请及时处理：", ""]
+        renewal_days = reminder_summary.renewal_days
+        lines = ["以下证书即将到期：", ""]
         for reminder in reminder_summary.reminders:
             days_text = f"{reminder.days_until_expiry} 天" if reminder.days_until_expiry is not None else "未知"
             lines.append(f"域名: {reminder.domain}")
             lines.append(f"  剩余天数: {days_text}")
             if reminder.expires_at:
                 lines.append(f"  到期时间: {reminder.expires_at}")
+            if reminder.days_until_expiry is not None and reminder.days_until_expiry > renewal_days:
+                days_to_renew = reminder.days_until_expiry - renewal_days
+                lines.append(f"  将在 {days_to_renew} 天后尝试自动续期并部署")
+            else:
+                lines.append(f"  将在下次定时任务中自动续期并部署")
             lines.append("")
-        lines.append("CertKeeper 将在下次定时任务中自动尝试续期和部署。")
         return "\n".join(lines)
 
     # ── SMTP 发送 ──
@@ -82,7 +87,7 @@ class EmailNotifier(Notifier):
     def _send_email(self, subject: str, body: str) -> None:
         settings = self.config.settings
         host = str(settings["host"])
-        port = int(settings.get("port", 465))
+        port = int(settings["port"]) if settings.get("port") else 465
         sender = str(settings["sender"])
         recipients_raw = settings["recipients"]
         if isinstance(recipients_raw, str):

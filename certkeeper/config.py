@@ -28,6 +28,7 @@ class SchedulerConfig:
     interval: str = "daily"
     time: str = "03:00"
     reminder_days: int = 30
+    renewal_days: int = 30
 
 
 @dataclass(slots=True)
@@ -204,6 +205,7 @@ def load_config(path: str | Path) -> AppConfig:
             interval=str(scheduler_section.get("interval", "daily")),
             time=str(scheduler_section.get("time", "03:00")),
             reminder_days=int(scheduler_section.get("reminder_days", 30)),
+            renewal_days=int(scheduler_section.get("renewal_days", 30)),
         ),
         web_ui=web_ui,
         notifications=notifications,
