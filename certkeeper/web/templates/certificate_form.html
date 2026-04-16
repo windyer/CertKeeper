@@ -1,0 +1,682 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="form-header">
+  <a href="/" class="btn-back">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    返回
+  </a>
+</div>
+
+<h1>{{ title }}</h1>
+
+{% if errors %}
+<div class="error-msg">
+  <ul style="margin:0;padding-left:1.25rem;">
+  {% for err in errors %}
+    <li>{{ err }}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="form-container">
+  <form method="post" action="{{ form_action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="form-section">
+      <div class="form-section-title">基本信息</div>
+
+      <div class="form-group">
+        <label>主域名</label>
+        <input type="text" name="domain" value="{{ form_data.domain }}"
+               {% if editing %}readonly{% endif %}
+               placeholder="example.com">
+      </div>
+
+      <div class="form-group">
+        <label>验证方式</label>
+        <select name="challenge" id="challenge-select">
+          <option value="dns-01" {% if form_data.challenge == "dns-01" %}selected{% endif %}>DNS-01</option>
+          <option value="http-01" {% if form_data.challenge == "http-01" %}selected{% endif %}>HTTP-01</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-section" id="dns-fields">
+      <div class="form-section-title">
+        DNS 验证配置
+        <button type="button" class="btn btn-secondary btn-small section-action-btn" onclick="openDnsModal()">管理 DNS 提供商</button>
+      </div>
+
+      <div class="form-group">
+        <label>DNS 提供商</label>
+        <select name="dns_provider" id="dns-provider-select">
+          <option value="">-- 请选择 --</option>
+          {% for name in dns_providers %}
+          <option value="{{ name }}" {% if form_data.dns_provider == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        {% if not dns_providers %}
+        <p class="text-muted">暂无 DNS 提供商，请先<a href="javascript:openDnsModal()">添加 DNS 提供商</a>。</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="form-section" id="http-fields">
+      <div class="form-section-title">HTTP 验证配置</div>
+
+      <div class="form-group">
+        <label>HTTP 根路径</label>
+        <input type="text" name="http_root" value="{{ form_data.http_root }}"
+               placeholder="/var/www/html">
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">备用域名 (SAN)</div>
+
+      <div id="san-list">
+        {% for s in form_data.san %}
+        <div class="san-row">
+          <input type="text" name="san" value="{{ s }}" placeholder="www.example.com">
+          <button type="button" class="btn-remove" onclick="removeSanRow(this)">\u00d7</button>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="btn btn-secondary btn-small" onclick="addSanRow()">+ 添加备用域名</button>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">
+        部署目标
+        <button type="button" class="btn btn-secondary btn-small section-action-btn" onclick="openDeployerModal()">管理部署目标</button>
+      </div>
+
+      <div id="deployer-checkboxes">
+        {% if deployers %}
+          {% for name in deployers %}
+          <label class="checkbox-label">
+            <input type="checkbox" name="deploy_to" value="{{ name }}"
+                   {% if name in form_data.deploy_to %}checked{% endif %}>
+            {{ name }}
+          </label>
+          {% endfor %}
+        {% else %}
+        <p class="text-muted" id="deployer-empty">暂无部署目标，请先<a href="javascript:openDeployerModal()">添加部署目标</a>。</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit">保存</button>
+      <a href="/" class="btn btn-secondary">取消</a>
+    </div>
+  </form>
+</div>
+
+<!-- ═══════ DNS 提供商管理弹窗 ═══════ -->
+<div class="modal-overlay" id="dns-modal" onclick="if(event.target===this)closeDnsModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>DNS 提供商</h2>
+      <button type="button" class="modal-close" onclick="closeDnsModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="dns-list"></div>
+      <button type="button" class="btn btn-secondary btn-small" onclick="showDnsForm()" id="dns-add-btn">+ 新增 DNS 提供商</button>
+
+      <div id="dns-form-area" style="display:none;margin-top:1rem;">
+        <div class="modal-form">
+          <div class="form-group">
+            <label>名称</label>
+            <input type="text" id="dns-form-name" placeholder="my-aliyun">
+          </div>
+          <div class="form-group">
+            <label>类型</label>
+            <select id="dns-form-type" onchange="onDnsTypeChange()">
+            </select>
+          </div>
+          <div id="dns-form-fields"></div>
+          <div id="dns-form-errors" class="error-msg" style="display:none;"></div>
+          <div style="display:flex;gap:0.5rem;margin-top:1rem;">
+            <button type="button" class="btn btn-small" onclick="saveDnsProvider()">保存</button>
+            <button type="button" class="btn btn-secondary btn-small" onclick="hideDnsForm()">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ 部署目标管理弹窗 ═══════ -->
+<div class="modal-overlay" id="deployer-modal" onclick="if(event.target===this)closeDeployerModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>部署目标</h2>
+      <button type="button" class="modal-close" onclick="closeDeployerModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="deployer-list"></div>
+      <button type="button" class="btn btn-secondary btn-small" onclick="showDeployerForm()" id="deployer-add-btn">+ 新增部署目标</button>
+
+      <div id="deployer-form-area" style="display:none;margin-top:1rem;">
+        <div class="modal-form">
+          <div class="form-group">
+            <label>名称</label>
+            <input type="text" id="deployer-form-name" placeholder="my-nginx">
+          </div>
+          <div class="form-group">
+            <label>类型</label>
+            <select id="deployer-form-type" onchange="onDeployerTypeChange()">
+            </select>
+          </div>
+          <div id="deployer-form-fields"></div>
+          <div id="deployer-form-errors" class="error-msg" style="display:none;"></div>
+          <div style="display:flex;gap:0.5rem;margin-top:1rem;">
+            <button type="button" class="btn btn-small" onclick="saveDeployer()">保存</button>
+            <button type="button" class="btn btn-secondary btn-small" onclick="hideDeployerForm()">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── 字段元数据 ── */
+var CSRF_TOKEN = "{{ csrf_token }}";
+var DEPLOYER_FIELDS = {{ deployer_fields_json | safe }};
+var DNS_PROVIDER_FIELDS = {{ dns_provider_fields_json | safe }};
+var DEPLOYER_TYPE_LABELS = {{ deployer_type_labels | tojson | safe }};
+var DNS_PROVIDER_TYPE_LABELS = {{ dns_provider_type_labels | tojson | safe }};
+
+/* ── 证书表单原有逻辑 ── */
+function toggleChallengeFields() {
+  var val = document.getElementById("challenge-select").value;
+  document.getElementById("dns-fields").style.display = val === "dns-01" ? "block" : "none";
+  document.getElementById("http-fields").style.display = val === "http-01" ? "block" : "none";
+}
+toggleChallengeFields();
+document.getElementById("challenge-select").addEventListener("change", toggleChallengeFields);
+
+function addSanRow() {
+  var container = document.getElementById("san-list");
+  var row = document.createElement("div");
+  row.className = "san-row";
+  row.innerHTML = '<input type="text" name="san" placeholder="www.example.com"><button type="button" class="btn-remove" onclick="removeSanRow(this)">\u00d7</button>';
+  container.appendChild(row);
+}
+function removeSanRow(btn) { btn.parentElement.remove(); }
+
+/* ══════════════════════════════════════
+   通用辅助函数
+   ══════════════════════════════════════ */
+
+function buildTypeOptions(selectEl, labels, fieldsData) {
+  selectEl.innerHTML = "";
+  for (var i = 0; i < fieldsData.length; i++) {
+    var t = fieldsData[i].type;
+    var opt = document.createElement("option");
+    opt.value = t;
+    opt.textContent = labels[t] || t;
+    selectEl.appendChild(opt);
+  }
+}
+
+function renderDynamicFields(containerId, fieldsData, selectedType, values) {
+  var container = document.getElementById(containerId);
+  container.innerHTML = "";
+  for (var i = 0; i < fieldsData.length; i++) {
+    if (fieldsData[i].type !== selectedType) continue;
+    var fields = fieldsData[i].fields;
+    for (var j = 0; j < fields.length; j++) {
+      var f = fields[j];
+      var fg = document.createElement("div");
+      fg.className = "form-group";
+      var val = (values && values[f.name] !== undefined) ? values[f.name] : "";
+      if (f.name === "sudo") {
+        fg.innerHTML = '<label class="checkbox-label"><input type="checkbox" id="rf-' + f.name + '" ' + (val === true || val === "true" || val === "True" ? "checked" : "") + '> ' + f.label + '</label>';
+      } else {
+        var inputType = f.secret ? "password" : "text";
+        fg.innerHTML = '<label>' + f.label + (f.required ? ' *' : '') + '</label><input type="' + inputType + '" id="rf-' + f.name + '" value="' + escapeAttr(val) + '" placeholder="' + escapeAttr(f.placeholder || '') + '">';
+      }
+      container.appendChild(fg);
+    }
+    return;
+  }
+}
+
+function collectFieldValues(fieldsData, selectedType) {
+  var settings = {};
+  for (var i = 0; i < fieldsData.length; i++) {
+    if (fieldsData[i].type !== selectedType) continue;
+    var fields = fieldsData[i].fields;
+    for (var j = 0; j < fields.length; j++) {
+      var f = fields[j];
+      var el = document.getElementById("rf-" + f.name);
+      if (f.name === "sudo") {
+        settings[f.name] = el ? el.checked : false;
+      } else {
+        settings[f.name] = el ? el.value : "";
+      }
+    }
+    return settings;
+  }
+  return settings;
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+/* ══════════════════════════════════════
+   DNS 提供商弹窗
+   ══════════════════════════════════════ */
+
+var _dnsEditing = null; // null = 新增, string = 编辑的名称
+
+function openDnsModal() {
+  document.getElementById("dns-modal").classList.add("active");
+  hideDnsForm();
+  loadDnsList();
+}
+function closeDnsModal() {
+  document.getElementById("dns-modal").classList.remove("active");
+}
+
+function loadDnsList() {
+  fetch("/api/dns-providers").then(function(r){ return r.json(); }).then(function(data) {
+    var list = document.getElementById("dns-list");
+    if (!data.items || data.items.length === 0) {
+      list.innerHTML = '<p class="text-muted">暂无 DNS 提供商。</p>';
+      return;
+    }
+    var html = "";
+    for (var i = 0; i < data.items.length; i++) {
+      var item = data.items[i];
+      html += '<div class="resource-item">';
+      html += '<div class="resource-info"><span class="resource-name">' + escapeAttr(item.name) + '</span><span class="resource-type">' + escapeAttr(DNS_PROVIDER_TYPE_LABELS[item.type] || item.type) + '</span></div>';
+      html += '<div class="resource-actions">';
+      html += '<button type="button" class="btn btn-secondary btn-small" onclick="editDnsProvider(\'' + escapeAttr(item.name) + '\')">编辑</button> ';
+      html += '<button type="button" class="btn btn-danger btn-small" onclick="deleteDnsProvider(\'' + escapeAttr(item.name) + '\')">删除</button>';
+      html += '</div></div>';
+    }
+    list.innerHTML = html;
+  });
+}
+
+function showDnsForm(editName, editType, editSettings) {
+  _dnsEditing = editName || null;
+  var nameInput = document.getElementById("dns-form-name");
+  var typeSelect = document.getElementById("dns-form-type");
+  buildTypeOptions(typeSelect, DNS_PROVIDER_TYPE_LABELS, DNS_PROVIDER_FIELDS);
+
+  nameInput.value = editName || "";
+  nameInput.readOnly = !!editName;
+  if (editType) typeSelect.value = editType;
+
+  renderDynamicFields("dns-form-fields", DNS_PROVIDER_FIELDS, typeSelect.value, editSettings || {});
+  document.getElementById("dns-form-area").style.display = "block";
+  document.getElementById("dns-form-errors").style.display = "none";
+  document.getElementById("dns-add-btn").style.display = "none";
+}
+
+function hideDnsForm() {
+  document.getElementById("dns-form-area").style.display = "none";
+  document.getElementById("dns-add-btn").style.display = "";
+  _dnsEditing = null;
+}
+
+function onDnsTypeChange() {
+  renderDynamicFields("dns-form-fields", DNS_PROVIDER_FIELDS, document.getElementById("dns-form-type").value, {});
+}
+
+function editDnsProvider(name) {
+  fetch("/api/dns-providers/" + encodeURIComponent(name)).then(function(r){ return r.json(); }).then(function(data) {
+    if (data.errors) { alert(data.errors.join("\n")); return; }
+    showDnsForm(data.name, data.type, data.settings);
+  });
+}
+
+function saveDnsProvider() {
+  var name = document.getElementById("dns-form-name").value.trim();
+  var type = document.getElementById("dns-form-type").value;
+  var settings = collectFieldValues(DNS_PROVIDER_FIELDS, type);
+  var url = _dnsEditing ? "/api/dns-providers/" + encodeURIComponent(_dnsEditing) + "/update" : "/api/dns-providers";
+
+  fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({csrf_token: CSRF_TOKEN, name: name, type: type, settings: settings})
+  }).then(function(r){ return r.json(); }).then(function(data) {
+    if (data.errors) {
+      var errEl = document.getElementById("dns-form-errors");
+      errEl.innerHTML = data.errors.join("<br>");
+      errEl.style.display = "block";
+      return;
+    }
+    hideDnsForm();
+    loadDnsList();
+    refreshDnsSelect();
+  });
+}
+
+function deleteDnsProvider(name) {
+  if (!confirm("确定删除 DNS 提供商 '" + name + "'？")) return;
+  fetch("/api/dns-providers/" + encodeURIComponent(name) + "/delete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({csrf_token: CSRF_TOKEN})
+  }).then(function(r){ return r.json(); }).then(function(data) {
+    if (data.errors) { alert(data.errors.join("\n")); return; }
+    loadDnsList();
+    refreshDnsSelect();
+  });
+}
+
+function refreshDnsSelect() {
+  fetch("/api/dns-providers").then(function(r){ return r.json(); }).then(function(data) {
+    var sel = document.getElementById("dns-provider-select");
+    var curVal = sel.value;
+    sel.innerHTML = '<option value="">-- 请选择 --</option>';
+    var items = data.items || [];
+    for (var i = 0; i < items.length; i++) {
+      var opt = document.createElement("option");
+      opt.value = items[i].name;
+      opt.textContent = items[i].name;
+      if (items[i].name === curVal) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  });
+}
+
+/* ══════════════════════════════════════
+   部署目标弹窗
+   ══════════════════════════════════════ */
+
+var _deployerEditing = null;
+
+function openDeployerModal() {
+  document.getElementById("deployer-modal").classList.add("active");
+  hideDeployerForm();
+  loadDeployerList();
+}
+function closeDeployerModal() {
+  document.getElementById("deployer-modal").classList.remove("active");
+}
+
+function loadDeployerList() {
+  fetch("/api/deployers").then(function(r){ return r.json(); }).then(function(data) {
+    var list = document.getElementById("deployer-list");
+    if (!data.items || data.items.length === 0) {
+      list.innerHTML = '<p class="text-muted">暂无部署目标。</p>';
+      return;
+    }
+    var html = "";
+    for (var i = 0; i < data.items.length; i++) {
+      var item = data.items[i];
+      html += '<div class="resource-item">';
+      html += '<div class="resource-info"><span class="resource-name">' + escapeAttr(item.name) + '</span><span class="resource-type">' + escapeAttr(DEPLOYER_TYPE_LABELS[item.type] || item.type) + '</span></div>';
+      html += '<div class="resource-actions">';
+      html += '<button type="button" class="btn btn-secondary btn-small" onclick="editDeployer(\'' + escapeAttr(item.name) + '\')">编辑</button> ';
+      html += '<button type="button" class="btn btn-danger btn-small" onclick="deleteDeployer(\'' + escapeAttr(item.name) + '\')">删除</button>';
+      html += '</div></div>';
+    }
+    list.innerHTML = html;
+  });
+}
+
+function showDeployerForm(editName, editType, editSettings) {
+  _deployerEditing = editName || null;
+  var nameInput = document.getElementById("deployer-form-name");
+  var typeSelect = document.getElementById("deployer-form-type");
+  buildTypeOptions(typeSelect, DEPLOYER_TYPE_LABELS, DEPLOYER_FIELDS);
+
+  nameInput.value = editName || "";
+  nameInput.readOnly = !!editName;
+  if (editType) typeSelect.value = editType;
+
+  renderDynamicFields("deployer-form-fields", DEPLOYER_FIELDS, typeSelect.value, editSettings || {});
+  document.getElementById("deployer-form-area").style.display = "block";
+  document.getElementById("deployer-form-errors").style.display = "none";
+  document.getElementById("deployer-add-btn").style.display = "none";
+}
+
+function hideDeployerForm() {
+  document.getElementById("deployer-form-area").style.display = "none";
+  document.getElementById("deployer-add-btn").style.display = "";
+  _deployerEditing = null;
+}
+
+function onDeployerTypeChange() {
+  renderDynamicFields("deployer-form-fields", DEPLOYER_FIELDS, document.getElementById("deployer-form-type").value, {});
+}
+
+function editDeployer(name) {
+  fetch("/api/deployers/" + encodeURIComponent(name)).then(function(r){ return r.json(); }).then(function(data) {
+    if (data.errors) { alert(data.errors.join("\n")); return; }
+    showDeployerForm(data.name, data.type, data.settings);
+  });
+}
+
+function saveDeployer() {
+  var name = document.getElementById("deployer-form-name").value.trim();
+  var type = document.getElementById("deployer-form-type").value;
+  var settings = collectFieldValues(DEPLOYER_FIELDS, type);
+  var url = _deployerEditing ? "/api/deployers/" + encodeURIComponent(_deployerEditing) + "/update" : "/api/deployers";
+
+  fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({csrf_token: CSRF_TOKEN, name: name, type: type, settings: settings})
+  }).then(function(r){ return r.json(); }).then(function(data) {
+    if (data.errors) {
+      var errEl = document.getElementById("deployer-form-errors");
+      errEl.innerHTML = data.errors.join("<br>");
+      errEl.style.display = "block";
+      return;
+    }
+    hideDeployerForm();
+    loadDeployerList();
+    refreshDeployerCheckboxes();
+  });
+}
+
+function deleteDeployer(name) {
+  if (!confirm("确定删除部署目标 '" + name + "'？")) return;
+  fetch("/api/deployers/" + encodeURIComponent(name) + "/delete", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({csrf_token: CSRF_TOKEN})
+  }).then(function(r){ return r.json(); }).then(function(data) {
+    if (data.errors) { alert(data.errors.join("\n")); return; }
+    loadDeployerList();
+    refreshDeployerCheckboxes();
+  });
+}
+
+function refreshDeployerCheckboxes() {
+  fetch("/api/deployers").then(function(r){ return r.json(); }).then(function(data) {
+    var container = document.getElementById("deployer-checkboxes");
+    // 保存当前选中值
+    var checked = {};
+    var cbs = container.querySelectorAll('input[type="checkbox"]');
+    for (var i = 0; i < cbs.length; i++) { if (cbs[i].checked) checked[cbs[i].value] = true; }
+
+    var items = data.items || [];
+    if (items.length === 0) {
+      container.innerHTML = '<p class="text-muted" id="deployer-empty">暂无部署目标，请先<a href="javascript:openDeployerModal()">添加部署目标</a>。</p>';
+      return;
+    }
+    var html = "";
+    for (var i = 0; i < items.length; i++) {
+      var n = items[i].name;
+      html += '<label class="checkbox-label"><input type="checkbox" name="deploy_to" value="' + escapeAttr(n) + '"' + (checked[n] ? ' checked' : '') + '> ' + escapeAttr(n) + '</label>';
+    }
+    container.innerHTML = html;
+  });
+}
+</script>
+
+<style>
+  .form-header { margin-bottom: 1rem; }
+  .btn-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-xs);
+    transition: var(--transition);
+  }
+  .btn-back:hover {
+    color: var(--text);
+    background: var(--surface);
+  }
+
+  .form-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.75rem;
+    box-shadow: var(--shadow);
+  }
+
+  .form-section {
+    margin-bottom: 1.75rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .form-section:last-of-type {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .form-section-title {
+    font-family: "Syne", sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .section-action-btn {
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* ─── Modal ─── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 8vh;
+  }
+  .modal-overlay.active {
+    display: flex;
+  }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    width: 90%;
+    max-width: 32rem;
+    max-height: 75vh;
+    display: flex;
+    flex-direction: column;
+    animation: modalIn 0.2s ease-out;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(-12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-header h2 {
+    margin: 0;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+    transform: none;
+    box-shadow: none;
+  }
+  .modal-close:hover {
+    color: var(--text);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .modal-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+  }
+
+  .modal-form {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+  }
+
+  /* ─── Resource Item (弹窗内列表行) ─── */
+  .resource-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .resource-item:last-child { border-bottom: none; }
+
+  .resource-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .resource-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text);
+  }
+  .resource-type {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: var(--bg-subtle);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-xs);
+  }
+  .resource-actions {
+    display: flex;
+    gap: 0.35rem;
+  }
+</style>
+{% endblock %}

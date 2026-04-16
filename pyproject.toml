@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "certkeeper"
+version = "0.1.0"
+description = "Certificate lifecycle management CLI for issuance, renewal, deployment, and notifications."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "APScheduler",
+  "click",
+  "cryptography",
+  "fastapi",
+  "itsdangerous",
+  "Jinja2",
+  "paramiko",
+  "python-multipart",
+  "PyYAML",
+  "requests",
+  "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[project.scripts]
+certkeeper = "certkeeper.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["certkeeper*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

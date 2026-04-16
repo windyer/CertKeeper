@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="dashboard-header">
+  <h1>证书概览</h1>
+  <div class="dashboard-actions">
+    <form method="post" action="/actions/apply" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn-action-apply">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+        执行 apply
+      </button>
+    </form>
+    <a href="/certificates/new" class="btn btn-secondary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      新增证书
+    </a>
+  </div>
+</div>
+
+{% if flash %}
+<p class="flash flash-success">{{ flash }}</p>
+{% endif %}
+
+{% if checks %}
+<div class="cert-grid">
+{% for item in checks %}
+  <div class="cert-card">
+    <div class="cert-card-header">
+      <div class="cert-domain">
+        <svg class="cert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        <a href="/certificates/{{ item.domain }}">{{ item.domain }}</a>
+      </div>
+      <span class="cert-status-badge badge-{{ 'ok' if item.reason in ('healthy','valid','ok') else 'warn' if item.reason in ('expiring','warning') else 'error' if item.reason in ('missing','error','failed') else 'muted' }}">
+        {{ item.reason }}
+      </span>
+    </div>
+    <div class="cert-card-meta">
+      <span class="meta-item">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        到期: {{ item.expiry_text }}
+      </span>
+    </div>
+    <div class="cert-card-actions">
+      <form method="post" action="/actions/renew/{{ item.domain }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn-action btn-renew btn-small">续期</button>
+      </form>
+      <form method="post" action="/actions/deploy/{{ item.domain }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn-action btn-deploy btn-small">部署</button>
+      </form>
+      <a href="/certificates/{{ item.domain }}/edit" class="btn-action btn-edit btn-small">编辑</a>
+      <form method="post" action="/certificates/{{ item.domain }}/delete" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn-action btn-delete btn-small">删除</button>
+      </form>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-icon">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+  </div>
+  <p class="empty-title">暂无证书配置</p>
+  <p class="empty-desc">点击上方「新增证书」开始管理你的 SSL/TLS 证书</p>
+</div>
+{% endif %}
+
+<style>
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .dashboard-header h1 { margin-bottom: 0; }
+
+  .dashboard-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .btn-action-apply {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.1rem;
+    background: linear-gradient(135deg, var(--primary), #059669);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn-action-apply:hover {
+    box-shadow: 0 2px 12px rgba(16,185,129,0.3);
+    transform: translateY(-1px);
+  }
+
+  /* ─── Certificate Grid ─── */
+  .cert-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .cert-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.35rem;
+    transition: var(--transition);
+    animation: cardSlideIn 0.35s ease-out both;
+    box-shadow: var(--shadow);
+  }
+  .cert-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+  .cert-card:nth-child(1) { animation-delay: 0.03s; }
+  .cert-card:nth-child(2) { animation-delay: 0.06s; }
+  .cert-card:nth-child(3) { animation-delay: 0.09s; }
+  .cert-card:nth-child(4) { animation-delay: 0.12s; }
+  .cert-card:nth-child(5) { animation-delay: 0.15s; }
+  .cert-card:nth-child(n+6) { animation-delay: 0.18s; }
+
+  @keyframes cardSlideIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .cert-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+  }
+
+  .cert-domain {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .cert-domain .cert-icon { color: var(--text-muted); flex-shrink: 0; }
+  .cert-domain a {
+    font-family: "Syne", sans-serif;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    color: var(--text);
+    text-decoration: none;
+    transition: var(--transition);
+  }
+  .cert-domain a:hover { color: var(--primary); }
+
+  .cert-status-badge {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .badge-ok { background: var(--success-dim); color: var(--success); }
+  .badge-warn { background: rgba(245,158,11,0.1); color: #b45309; }
+  .badge-error { background: var(--danger-dim); color: var(--danger); }
+  .badge-muted { background: var(--secondary-dim); color: var(--secondary); }
+
+  .cert-card-meta {
+    display: flex;
+    gap: 1.25rem;
+    margin-bottom: 0.85rem;
+  }
+  .meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  .cert-card-actions {
+    display: flex;
+    gap: 0.35rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: inherit;
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    text-decoration: none;
+    transition: var(--transition);
+    border: 1px solid transparent;
+  }
+  .btn-renew {
+    background: var(--success-dim);
+    color: var(--success);
+    border-color: rgba(16,185,129,0.18);
+  }
+  .btn-renew:hover {
+    background: rgba(16,185,129,0.18);
+    box-shadow: 0 2px 8px rgba(16,185,129,0.15);
+  }
+  .btn-deploy {
+    background: var(--secondary-dim);
+    color: var(--secondary);
+    border-color: rgba(99,102,241,0.15);
+  }
+  .btn-deploy:hover {
+    background: rgba(99,102,241,0.14);
+    box-shadow: 0 2px 8px rgba(99,102,241,0.15);
+  }
+  .btn-edit {
+    background: rgba(245,158,11,0.08);
+    color: #b45309;
+    border-color: rgba(245,158,11,0.18);
+  }
+  .btn-edit:hover {
+    background: rgba(245,158,11,0.14);
+    box-shadow: 0 2px 8px rgba(245,158,11,0.12);
+  }
+  .btn-delete {
+    background: var(--danger-dim);
+    color: var(--danger);
+    border-color: rgba(239,68,68,0.15);
+  }
+  .btn-delete:hover {
+    background: rgba(239,68,68,0.14);
+    box-shadow: 0 2px 8px rgba(239,68,68,0.12);
+  }
+
+  /* ─── Empty State ─── */
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+  }
+  .empty-icon {
+    margin-bottom: 1.25rem;
+    opacity: 0.3;
+  }
+  .empty-title {
+    font-family: "Syne", sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.4rem;
+  }
+  .empty-desc {
+    font-size: 0.875rem;
+  }
+
+  @media (max-width: 640px) {
+    .dashboard-header { flex-direction: column; align-items: flex-start; }
+    .cert-card-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .cert-card-actions { flex-wrap: wrap; }
+  }
+</style>
+{% endblock %}
