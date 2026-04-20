@@ -210,6 +210,14 @@ class Manager:
         return deployed_targets
 
     def _notify(self, summary: ApplySummary) -> None:
+        # 只有在真正续期或有错误时才发送处理结果通知
+        if not summary.results:
+            return
+        renewed = any(r.renewed for r in summary.results)
+        has_errors = any(r.errors for r in summary.results)
+        if not renewed and not has_errors:
+            return
+
         for resource in self.config.notifications.values():
             try:
                 notifier = self.notifier_registry.create(resource)
