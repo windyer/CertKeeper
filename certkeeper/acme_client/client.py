@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import time
 
 import requests
@@ -16,6 +17,8 @@ from cryptography.x509.oid import NameOID
 from certkeeper.acme_client.account import AcmeAccountService
 from certkeeper.config import AcmeConfig, CertificateConfig
 from certkeeper.core.manager import CertificateMaterial
+
+logger = logging.getLogger(__name__)
 
 
 class AcmeError(Exception):
@@ -34,16 +37,23 @@ class AcmeClient:
 
     def obtain_certificate(self, certificate: CertificateConfig, challenge_handler) -> CertificateMaterial:
         """通过 ACME 协议申请证书。完整流程：注册 → 下单 → 验证 → 签发。"""
+        logger.info("开始申请证书: %s (SAN: %s)", certificate.domain, certificate.san)
         self._load_account_key()
         self._directory = self._fetch_directory()
+        logger.debug("ACME 目录已获取: %s", self.config.directory)
 
         if not self._kid:
             self._kid = self._register_account()
+            logger.info("ACME 账户已注册: %s", self._kid)
+        else:
+            logger.debug("使用已有账户: %s", self._kid)
 
         domains = [certificate.domain] + certificate.san
         order = self._create_order(domains)
+        logger.info("订单已创建, 共 %d 个授权验证", len(order["authorizations"]))
 
-        for auth_url in order["authorizations"]:
+        for i, auth_url in enumerate(order["authorizations"], 1):
+            logger.info("处理授权验证 %d/%d: %s", i, len(order["authorizations"]), auth_url)
             self._fulfill_authorization(auth_url, certificate, challenge_handler)
 
         domain_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -54,8 +64,10 @@ class AcmeClient:
         ).decode()
 
         csr_b64 = self._generate_csr(domain_key, domains)
+        logger.info("CSR 已生成, 开始 finalize 订单")
         order = self._finalize_order(order["finalize"], csr_b64)
         cert_pem = self._download_certificate(order["certificate"])
+        logger.info("证书下载成功: %s", certificate.domain)
 
         return CertificateMaterial(fullchain_pem=cert_pem, private_key_pem=domain_key_pem)
 
@@ -155,6 +167,7 @@ class AcmeClient:
         if resp.status_code >= 400:
             raise AcmeError(f"Get authorization failed: {resp.text}")
         auth = resp.json()
+        logger.debug("授权状态: %s", auth.get("status"))
 
         dns_challenge = None
         for ch in auth.get("challenges", []):
@@ -168,12 +181,16 @@ class AcmeClient:
         key_authz = token + "." + self._jwk_thumbprint()
         dns_value = _b64url(hashlib.sha256(key_authz.encode()).digest())
 
+        logger.info("准备 DNS-01 验证: domain=%s", certificate.domain)
         handler.prepare(certificate, validation=dns_value)
 
         try:
+            logger.info("通知 ACME 服务器开始验证...")
             self._post(dns_challenge["url"], {}, kid=self._kid)
             self._poll_status(dns_challenge["url"], "challenge")
+            logger.info("DNS-01 验证通过: %s", certificate.domain)
         finally:
+            logger.debug("清理 DNS 验证记录: %s", certificate.domain)
             handler.cleanup(certificate, validation=dns_value)
 
     def _finalize_order(self, finalize_url: str, csr_b64: str) -> dict:

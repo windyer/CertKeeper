@@ -74,10 +74,20 @@ class Manager:
 
     def check_certificates(self) -> list[CertificateCheck]:
         days_before_expiry = self.config.scheduler.renewal_days
+        logger.info("开始检查证书，续期阈值: %d 天", days_before_expiry)
         checks: list[CertificateCheck] = []
         for certificate in self.config.certificates:
+            logger.debug("检查证书: %s", certificate.domain)
             status = self.store.get_certificate_status(certificate.domain)
-            checks.append(self._build_check(certificate, status, days_before_expiry))
+            check = self._build_check(certificate, status, days_before_expiry)
+            logger.info(
+                "证书 %s: needs_renewal=%s, reason=%s, days_left=%s",
+                certificate.domain,
+                check.needs_renewal,
+                check.reason,
+                status.days_until_expiry if status.days_until_expiry is not None else "N/A",
+            )
+            checks.append(check)
         return checks
 
     def send_expiry_reminders(self) -> None:
@@ -85,12 +95,15 @@ class Manager:
 
         reminder_days = self.config.scheduler.reminder_days
         reminders: list[ExpiryReminder] = []
+        logger.info("开始检查证书到期情况，提醒阈值: %d 天", reminder_days)
 
         for certificate in self.config.certificates:
             status = self.store.get_certificate_status(certificate.domain)
             if not status.exists or status.days_until_expiry is None:
+                logger.debug("证书 %s: 跳过 (exists=%s, days_until_expiry=%s)", certificate.domain, status.exists, status.days_until_expiry)
                 continue
             if status.days_until_expiry <= reminder_days:
+                logger.info("证书 %s 即将到期: 剩余 %d 天", certificate.domain, status.days_until_expiry)
                 reminders.append(ExpiryReminder(
                     domain=certificate.domain,
                     days_until_expiry=status.days_until_expiry,
@@ -110,9 +123,11 @@ class Manager:
 
     def apply(self, *, force: bool = False, domain: str | None = None) -> ApplySummary:
         selected = [item for item in self.config.certificates if domain is None or item.domain == domain]
+        logger.info("开始 apply 流程: force=%s, domain=%s, 共 %d 个证书", force, domain, len(selected))
         results: list[CertificateApplyResult] = []
 
         for certificate in selected:
+            logger.info("处理证书: %s", certificate.domain)
             status = self.store.get_certificate_status(certificate.domain)
             check = self._build_check(certificate, status, self.config.scheduler.renewal_days)
             renewed = force or check.needs_renewal
@@ -120,12 +135,15 @@ class Manager:
 
             try:
                 if renewed:
+                    logger.info("开始续期证书: %s (原因: %s)", certificate.domain, check.reason)
                     material = self._renew_certificate(certificate)
+                    logger.info("证书续期成功: %s", certificate.domain)
                     written = self.store.save_certificate(
                         certificate.domain,
                         material.fullchain_pem,
                         material.private_key_pem,
                     )
+                    logger.info("证书已保存: fullchain=%s, key=%s", written.fullchain_path, written.private_key_path)
                     deployed_targets = self._deploy_certificate(certificate, written.fullchain_path, written.private_key_path)
                     result.deployed_targets = deployed_targets
                     self.store.record_result(
@@ -134,7 +152,10 @@ class Manager:
                         renewed_at=datetime.now(UTC),
                         deploy_results={target: "success" for target in deployed_targets},
                     )
+                else:
+                    logger.info("证书 %s 无需续期 (状态: %s)", certificate.domain, check.reason)
             except Exception as exc:  # noqa: BLE001
+                logger.error("证书 %s 处理失败: %s", certificate.domain, exc, exc_info=True)
                 result.errors.append(str(exc))
 
             results.append(result)
@@ -147,9 +168,11 @@ class Manager:
         """将本地已存在的证书重新部署到配置目标。"""
 
         selected = [item for item in self.config.certificates if domain is None or item.domain == domain]
+        logger.info("开始 deploy 流程: domain=%s, 共 %d 个证书", domain, len(selected))
         results: list[CertificateApplyResult] = []
 
         for certificate in selected:
+            logger.info("重新部署证书: %s", certificate.domain)
             status = self.store.get_certificate_status(certificate.domain)
             result = CertificateApplyResult(domain=certificate.domain, renewed=False)
 
@@ -169,6 +192,7 @@ class Manager:
                     deploy_results={target: "success" for target in deployed_targets},
                 )
             except Exception as exc:  # noqa: BLE001
+                logger.error("证书 %s 部署失败: %s", certificate.domain, exc, exc_info=True)
                 result.errors.append(str(exc))
 
             results.append(result)
@@ -197,25 +221,30 @@ class Manager:
 
     def _deploy_certificate(self, certificate: CertificateConfig, cert_path, key_path) -> list[str]:
         deployed_targets: list[str] = []
+        logger.info("开始部署证书 %s 到 %d 个目标: %s", certificate.domain, len(certificate.deploy_to), certificate.deploy_to)
         for target_name in certificate.deploy_to:
             target_config = self.config.deployers[target_name]
+            logger.info("部署到目标 [%s] (类型: %s)", target_name, target_config.type)
             deployer = self.deployer_registry.create(target_config)
             try:
                 deployer.deploy(certificate.domain, cert_path, key_path)
+                logger.info("部署成功: %s -> %s", certificate.domain, target_name)
             except Exception as exc:
+                logger.error("部署失败: %s -> %s: %s", certificate.domain, target_name, exc)
                 raise RuntimeError(
-                    f"部署目标 [{target_name}] ({target_config.provider}) 失败: {exc}"
+                    f"部署目标 [{target_name}] ({target_config.type}) 失败: {exc}"
                 ) from exc
             deployed_targets.append(target_name)
         return deployed_targets
 
     def _notify(self, summary: ApplySummary) -> None:
-        # 只有在真正续期或有错误时才发送处理结果通知
+        # 有续期、部署或错误时才发送处理结果通知
         if not summary.results:
             return
         renewed = any(r.renewed for r in summary.results)
         has_errors = any(r.errors for r in summary.results)
-        if not renewed and not has_errors:
+        has_deployments = any(r.deployed_targets for r in summary.results)
+        if not renewed and not has_errors and not has_deployments:
             return
 
         for resource in self.config.notifications.values():

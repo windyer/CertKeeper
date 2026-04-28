@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from certkeeper.challenges.base import ChallengeHandler
 from certkeeper.config import CertificateConfig, NamedResourceConfig
 from certkeeper.dns.base import DnsProvider, ProviderRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class Dns01ChallengeHandler(ChallengeHandler):
@@ -22,20 +26,26 @@ class Dns01ChallengeHandler(ChallengeHandler):
     def prepare(self, certificate: CertificateConfig, validation: str = "") -> None:
         provider = self._resolve_provider(certificate)
         domain = certificate.domain.lstrip("*.")
+        record_name = f"_acme-challenge.{domain}"
+        logger.info("创建 DNS TXT 记录: %s (域名: %s, 使用 DNS 提供商: %s)", record_name, domain, certificate.dns_provider)
         provider.create_txt_record(
             domain,
-            f"_acme-challenge.{domain}",
+            record_name,
             validation,
         )
+        logger.info("DNS TXT 记录已创建: %s", record_name)
 
     def cleanup(self, certificate: CertificateConfig, validation: str = "") -> None:
         provider = self._resolve_provider(certificate)
         domain = certificate.domain.lstrip("*.")
+        record_name = f"_acme-challenge.{domain}"
+        logger.info("删除 DNS TXT 记录: %s", record_name)
         provider.delete_txt_record(
             domain,
-            f"_acme-challenge.{domain}",
+            record_name,
             validation,
         )
+        logger.info("DNS TXT 记录已删除: %s", record_name)
 
     def _resolve_provider(self, certificate: CertificateConfig) -> DnsProvider:
         if not certificate.dns_provider:

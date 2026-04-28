@@ -36,12 +36,15 @@ class NginxSshDeployer(Deployer):
 
         connect_kwargs: dict = {"hostname": host, "port": port, "username": user, "timeout": 30}
 
-        if "ssh_key_path" in self.config.settings:
+        if self.config.settings.get("ssh_key_path"):
             connect_kwargs["key_filename"] = str(self.config.settings["ssh_key_path"])
-        elif "password" in self.config.settings:
+            logger.info("SSH 连接: %s@%s:%d (使用密钥认证)", user, host, port)
+        elif self.config.settings.get("password"):
             connect_kwargs["password"] = str(self.config.settings["password"])
+            logger.info("SSH 连接: %s@%s:%d (使用密码认证)", user, host, port)
 
         client.connect(**connect_kwargs)
+        logger.info("SSH 连接成功: %s@%s:%d", user, host, port)
         return client
 
     @property

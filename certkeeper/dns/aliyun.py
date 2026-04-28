@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import logging
 import time
 import urllib.parse
 import uuid
@@ -12,6 +13,8 @@ import uuid
 import requests
 
 from certkeeper.dns.base import DnsProvider
+
+logger = logging.getLogger(__name__)
 
 
 class AliyunDnsProvider(DnsProvider):
@@ -38,6 +41,7 @@ class AliyunDnsProvider(DnsProvider):
     def create_txt_record(self, domain: str, name: str, value: str) -> None:
         """创建 TXT 记录并等待 DNS 生效。"""
         rr, zone = self._parse_record_name(name, domain)
+        logger.info("创建 TXT 记录: RR=%s, Zone=%s, Domain=%s", rr, zone, domain)
         params = {
             "Action": "AddDomainRecord",
             "DomainName": zone,
@@ -46,18 +50,24 @@ class AliyunDnsProvider(DnsProvider):
             "Value": value,
         }
         self._call_api(params)
+        logger.info("TXT 记录已提交, 等待 DNS 生效: %s", name)
         self._wait_for_propagation(name, value)
+        logger.info("DNS 记录已生效: %s", name)
 
     def delete_txt_record(self, domain: str, name: str, value: str) -> None:
         """查询并删除对应的 TXT 记录。"""
         rr, zone = self._parse_record_name(name, domain)
         record_id = self._find_record_id(zone, rr, "TXT")
         if record_id:
+            logger.info("删除 TXT 记录: RR=%s, Zone=%s, RecordId=%s", rr, zone, record_id)
             params = {
                 "Action": "DeleteDomainRecord",
                 "RecordId": record_id,
             }
             self._call_api(params)
+            logger.info("TXT 记录已删除: RecordId=%s", record_id)
+        else:
+            logger.warning("未找到 TXT 记录: RR=%s, Zone=%s", rr, zone)
 
     def _parse_record_name(self, full_name: str, domain: str) -> tuple[str, str]:
         """解析完整记录名为 (RR, Zone)。
@@ -113,7 +123,9 @@ class AliyunDnsProvider(DnsProvider):
     def _wait_for_propagation(self, name: str, value: str, timeout: int = 60, interval: int = 5) -> None:
         """通过 Google DNS-over-HTTPS 确认 TXT 记录已生效。"""
         deadline = time.time() + timeout
+        attempt = 0
         while time.time() < deadline:
+            attempt += 1
             try:
                 resp = requests.get(
                     "https://dns.google/resolve",
@@ -123,9 +135,11 @@ class AliyunDnsProvider(DnsProvider):
                 for answer in resp.json().get("Answer", []):
                     if answer.get("data", "").strip('"') == value:
                         return
-            except Exception:
-                pass
+                logger.debug("DNS 查询第 %d 次未命中: %s", attempt, name)
+            except Exception as exc:
+                logger.debug("DNS 查询第 %d 次失败: %s - %s", attempt, name, exc)
             time.sleep(interval)
+        logger.warning("DNS 传播超时 (%ds): %s", timeout, name)
 
     def _call_api(self, business_params: dict) -> dict:
         """调用阿里云 API，自动签名。"""
