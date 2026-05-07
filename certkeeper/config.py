@@ -279,17 +279,24 @@ def validate_domain(domain: str) -> str | None:
     return None
 
 
-def save_config(config: AppConfig, *, include_resources: bool = False) -> None:
+def save_config(config: AppConfig, *, include_resources: bool = False, include_scheduler: bool = False) -> None:
     """将配置写回 YAML 文件。
 
     默认只更新 certificates 部分。设置 include_resources=True 时
-    同时更新 deployers 和 dns_providers。
+    同时更新 deployers 和 dns_providers。设置 include_scheduler=True 时
+    同时更新 scheduler 部分。
     """
     raw = load_raw_config(config.path)
     raw["certificates"] = [_cert_to_dict(c) for c in config.certificates]
     if include_resources:
         raw["deployers"] = _named_resources_to_dict(config.deployers)
         raw["dns_providers"] = _named_resources_to_dict(config.dns_providers)
+    if include_scheduler:
+        raw_scheduler = raw.get("scheduler", {})
+        if not isinstance(raw_scheduler, dict):
+            raw_scheduler = {}
+        raw_scheduler.update(_scheduler_to_dict(config.scheduler))
+        raw["scheduler"] = raw_scheduler
     config.path.write_text(
         yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
@@ -304,6 +311,18 @@ def _named_resources_to_dict(resources: dict[str, NamedResourceConfig]) -> dict[
         entry.update(res.settings)
         result[name] = entry
     return result
+
+
+def _scheduler_to_dict(scheduler: SchedulerConfig) -> dict[str, Any]:
+    """将 SchedulerConfig 序列化为 YAML 友好的字典。"""
+    d: dict[str, Any] = {
+        "enabled": scheduler.enabled,
+        "interval": scheduler.interval,
+        "time": scheduler.time,
+        "reminder_days": scheduler.reminder_days,
+        "renewal_days": scheduler.renewal_days,
+    }
+    return d
 
 
 def _cert_to_dict(cert: CertificateConfig) -> dict[str, Any]:

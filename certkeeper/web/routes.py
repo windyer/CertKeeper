@@ -179,6 +179,8 @@ def register_routes(app: FastAPI) -> None:
         except (ValueError, TypeError):
             config.scheduler.renewal_days = 30
 
+        save_config(config, include_scheduler=True)
+
         if scheduler_obj is not None and scheduler_obj.running:
             # 移除旧任务并重新添加
             scheduler_obj.remove_all_jobs()
